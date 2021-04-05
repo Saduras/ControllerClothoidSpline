@@ -48,8 +48,12 @@ def plotAngle(pos, alpha, length=0.3, color='red'):
     plt.plot(xs, ys, color=color)
 
 
+def arclength(alpha):
+    return math.sqrt(2 * alpha / math.pi)
+
 # Based on A controlled clothoid spline
 # http://www.lara.prd.fr/_media/users/franciscogarcia/a_controlled_clothoid_spline.pdf
+
 
 def symmetric_blend(p0, p0_dir, p1):
     # this alpha is alpha/2 from the paper
@@ -71,12 +75,11 @@ def symmetric_blend(p0, p0_dir, p1):
     # C_s(z) = int cos((pi t^2)/2) dt
 
     # solve for a
-    arclength = math.sqrt(2 * alpha / math.pi)
-    S, C = fresnel(arclength)
+    S, C = fresnel(arclength(alpha))
     a = g / (C + S * math.tan(alpha))
 
     # calculate x and y values
-    ts = np.arange(0, arclength, 0.01)
+    ts = np.arange(0, arclength(alpha), 0.01)
     Ss, Cs = fresnel(ts)
     xs = a * Cs
     ys = a * Ss
@@ -108,10 +111,13 @@ def unsymmentric_blend(p0, v, p1):
     t0 = normalize(v - p0)
     t1 = normalize(v - p1)
 
+    n0 = np.array([-t0[1], t0[0]])
+    n1 = np.array([t1[1], -t1[0]])
+
     k = g / h
     alpha = math.pi - angle(t0, p1 - p0)
 
-    S_a, C_a = fresnel(alpha)
+    S_a, C_a = fresnel(arclength(alpha))
     left = (k + math.cos(alpha)) / math.sin(alpha)
     right = C_a / S_a
     print(left, '<', right)
@@ -119,40 +125,56 @@ def unsymmentric_blend(p0, v, p1):
         raise ValueError('Invalid choice of v!')
 
     def f(theta):
-        S_t, C_t = fresnel(theta)
-        S_at, C_at = fresnel(alpha - theta)
-        result = math.sqrt(theta) * (C_t * math.sin(alpha) -
-                                     S_t * (k + math.cos(alpha)))
+        S_t, C_t = fresnel(arclength(theta))
+        S_at, C_at = fresnel(arclength(alpha - theta))
+        result = math.sqrt(theta) * (C_t * math.sin(alpha)
+                                     - S_t * (k + math.cos(alpha)))
         result += math.sqrt(alpha - theta) * (S_at *
-                                              (1 + k * math.cos(alpha)) - k * C_at * math.sin(alpha))
+                                              (1 + k * math.cos(alpha))
+                                              - k * C_at * math.sin(alpha))
         return result
 
-    theta0 = optimize.bisect(f, alpha/2, alpha)
-    theta1 = alpha - theta0
+    theta0 = optimize.bisect(f, 0, alpha)
 
-    print(f(theta0))
-
-    S_t0, C_t0 = fresnel(theta0)
-    S_at0, C_at0 = fresnel(alpha - theta0)
+    S_t0, C_t0 = fresnel(arclength(theta0))
+    S_at0, C_at0 = fresnel(arclength(alpha - theta0))
+    # Formular from paper
     # a0 * S_t0 + a0 * sqrt( (alpha - theta0)/theta0 ) * C_at0 * sin(alpha) - a0 * sqrt( (alpha - theta0)/theta0 ) * S_at0 * cos(alpha) = h * sin(alpha)
+    # solve for a0
     # S_t0 + sqrt( (alpha - theta0)/theta0 ) * C_at0 * sin(alpha) - sqrt( (alpha - theta0)/theta0 ) * S_at0 * cos(alpha) = h * sin(alpha) / a0
     # (S_t0 + sqrt( (alpha - theta0)/theta0 ) * C_at0 * sin(alpha) - sqrt( (alpha - theta0)/theta0 ) * S_at0 * cos(alpha) ) / h * sin(alpha) = 1 / a0
     # a0 = h * sin(alpha) / (S_t0 + sqrt( (alpha - theta0)/theta0 ) * C_at0 * sin(alpha) - sqrt( (alpha - theta0)/theta0 ) * S_at0 * cos(alpha) )
     a0 = h * math.sin(alpha) / (S_t0 + math.sqrt((alpha - theta0)/theta0) * C_at0 *
                                 math.sin(alpha) - math.sqrt((alpha - theta0) / theta0) * S_at0 * math.cos(alpha))
-    a1 = a0 * math.sqrt(theta1 / theta0)
-
-    arclength = math.sqrt(2 * theta0 / math.pi)
+    a1 = a0 * math.sqrt((alpha - theta0) / theta0)
 
     # calculate x and y values
-    ts = np.arange(0, arclength, 0.01)
+    ts = np.arange(0, arclength(theta0), 0.01)
     Ss, Cs = fresnel(ts)
-    xs = a0 * Cs
-    ys = a0 * Ss
+    # xs = p0[0] + a0 * Cs
+    # ys = p0[1] + a0 * Ss
+    pts0 = np.reshape(p0, (2, 1)) + a0 * np.reshape(t0, (2, 1)) * np.reshape(Cs, (1, -1)) + \
+        a0 * np.reshape(n0, (2, 1)) * np.reshape(Ss, (1, -1))
+
+    ts = np.arange(0, arclength(alpha - theta0), 0.01)
+    Ss, Cs = fresnel(ts)
+
+    pts1 = np.reshape(p1, (2, 1)) + a1 * np.reshape(t1, (2, 1)) * np.reshape(Cs, (1, -1)) + \
+        a1 * np.reshape(n1, (2, 1)) * np.reshape(Ss, (1, -1))
+    pts1 = np.flip(pts1, axis=1)
+
+    xs = np.append(pts0[0, :], pts1[0, :])
+    ys = np.append(pts0[1, :], pts1[1, :])
+
+    P = p0 + a0 * C_t0 * t0 + a0 * S_t0 * n0
+    plt.scatter(P[0], P[1], color='red')
+
+    P = p1 + a1 * C_at0 * t1 + a1 * S_at0 * n1
+    plt.scatter(P[0], P[1], color='red')
 
     plotAngle(v, alpha)
     plotAngle(p0 + t0 * g/2, theta0, color='green')
-    plotAngle(p1 + t1 * h/2, theta1, color='blue')
+    plotAngle(p1 + t1 * h/2, (alpha - theta0), color='blue')
 
     return xs, ys
 
@@ -164,7 +186,7 @@ p1 = np.array([2, 2])
 # xs, ys, cp = symmetric_blend(p0, p0_dir, p1)
 
 
-cp = p0_dir * 4.5
+cp = p0_dir * 3
 xs, ys = unsymmentric_blend(p0, cp, p1)
 
 mid = (p1 - p0)/2
