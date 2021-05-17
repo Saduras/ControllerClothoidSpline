@@ -23,10 +23,9 @@ def angle(v1, v2):
 
 
 def rotate(v, alpha):
-    w = np.array([0, 0])
-    w[0] = v[0] * math.cos(alpha) - v[1] * math.sin(alpha)
-    w[1] = v[0] * math.sin(alpha) + v[1] * math.cos(alpha)
-    return w
+    x = v[0] * math.cos(alpha) - v[1] * math.sin(alpha)
+    y = v[0] * math.sin(alpha) + v[1] * math.cos(alpha)
+    return np.array([x, y])
 
 
 def reverse(phi1, phi2, point1, D):
@@ -57,9 +56,15 @@ def eval(theta, phi1, phi2, sign):
     s = math.sin(theta + phi1)
 
     f = math.sqrt(2 * math.pi) * (c * (S2 - sign * S1) - s * (C2 - sign * C1))
-    f_derv = math.sin(phi2)/(math.sqrt(theta + phi1 + phi2)) \
-        + sign * math.sin(phi1)/(math.sqrt(theta)) \
-        - math.sqrt(2 * math.pi)(s * (S2 - sign * S1) + c * (C2 - sign * C1))
+
+    # If theta is 0 or smaller the deriverative is not defined.
+    if theta > 0:
+        f_derv = math.sin(phi2)/(math.sqrt(theta + phi1 + phi2)) \
+            + sign * math.sin(phi1)/(math.sqrt(theta)) \
+            - math.sqrt(2 * math.pi) * (s * (S2 - sign * S1) +
+                                        c * (C2 - sign * C1))
+    else:
+        f_derv = float('inf')
     return f, f_derv
 
 
@@ -76,7 +81,7 @@ def solve(a, b, phi1, phi2, sign, tolerance, iterationLimit):
         newtonFail = True
 
         if abs(f_deriv) > tolerance:
-            theta_iter - theta - f/f_deriv
+            theta_iter = theta - f/f_deriv
             delta = abs(theta - theta_iter)
             if theta_iter > a and theta_iter < b and delta < 0.5 * error:
                 newtonFail = False
@@ -126,11 +131,11 @@ def fitEuler(point1, tangent, d, phi1, phi2, tolerance, iterationLimit, reflectF
             theta0, theta1, phi1, phi2, sign, tolerance, iterationLimit)
 
     t1 = sign * arclength(theta)
-    t2 = arclength(theta + phi + phi2)
-    S1, C2 = fresnel(t1)
+    t2 = arclength(theta + phi1 + phi2)
+    S1, C1 = fresnel(t1)
     S2, C2 = fresnel(t2)
     phi = phi1 + theta
-    a = d/((S2 - S1) * sin(phi) + (C2 - C1) * cos(phi))
+    a = d/((S2 - S1) * math.sin(phi) + (C2 - C1) * math.cos(phi))
 
     if reflectFlag:
         T0 = rotate(tangent, phi)
@@ -139,7 +144,7 @@ def fitEuler(point1, tangent, d, phi1, phi2, tolerance, iterationLimit, reflectF
         T0 = rotate(tangent, -phi)
         N0 = rotate(T0, 0.5 * phi)
 
-    point0 = point1 - a(C1 * T0 + S1 * N0)
+    point0 = point1 - a * (C1 * T0 + S1 * N0)
     return point0, T0, N0, a, t1, t2, iteration, failFlag
 
 
@@ -196,6 +201,13 @@ def completeShape(point1, tangent1, point2, tangent2, tolerance, iterationLimit)
                 # unit tangent vector tangent0 at point0, unit normal vector normal0 at point0,
                 # and scaling factor a.
                 print("Draw Euler spiral.")
+                ts = np.arange(t1, t2 + 0.01, 0.01)
+                Ss, Cs = fresnel(ts)
+                Ss = np.reshape(Ss, (-1, 1))
+                Cs = np.reshape(Cs, (-1, 1))
+                tangent0 = np.reshape(tangent0, (1, -1))
+                normal0 = np.reshape(normal0, (1, -1))
+                return point0 + a * Cs * tangent0 + a * Ss * normal0
 
 
 def testDegenerate():
@@ -245,7 +257,7 @@ def testCircular():
     plt.show()
 
 
-def testEulerSpiral():
+def testEulerSpiralCShape():
     point1 = np.array([0, 0])
     tangent1 = np.array([0, 1])
     point2 = np.array([-2, 0])
@@ -263,4 +275,4 @@ def testEulerSpiral():
 # testAmbigous()
 # testStraightLine()
 # testCircular()
-testEulerSpiral()
+testEulerSpiralCShape()
